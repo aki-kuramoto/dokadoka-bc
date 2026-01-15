@@ -1,0 +1,49 @@
+# Go build artifacts
+/ddbc
+/ddbc.exe
+
+# Go toolchain
+/bin/
+/pkg/
+
+# Test / temp
+*.tmp
+*.log
+
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# vendor Dependency directories (use Go Modules if possible; remove the comment below to include it)
+# vendor/
+
+# Go workspace file
+go.work
+go.work.sum
+
+# env file
+.env
+
+### IntelliJ IDEA ###
+.idea/
+*.iml
+
+### Visual Studio Code
+.vscode/
+
+### Caches by Desktop Environment ###
+.DS_Store
+Thumbs.db
+
+### Author's custom
+.personal
+
