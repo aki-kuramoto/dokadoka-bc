@@ -420,7 +420,7 @@ func cloneOrFetch(
 	dotGitDir := filepath.Join(localRepoPath, ".git")
 	
 	if _, err := os.Stat(dotGitDir); os.IsNotExist(err) {
-		if err = os.Mkdir(localRepoRoot, 0755); err != nil && !os.IsExist(err) {
+		if err = os.MkdirAll(localRepoRoot, 0755); err != nil && !os.IsExist(err) {
 			log.Fatalf("Failed to ensure root dir: %v", err)
 		}
 		
