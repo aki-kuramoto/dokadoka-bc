@@ -4,14 +4,15 @@ package main
 import (
 	"context"
 	"path"
+	"runtime"
 	"strings"
-
+	
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
-
+	
 	"github.com/aki-kuramoto/dokadoka-bc/internal/ddbccfg"
 	"github.com/aki-kuramoto/dokadoka-bc/internal/ddbcmain"
 	"github.com/docker/docker/client"
@@ -23,7 +24,7 @@ func main() {
 		log.Fatalf("Failed to parse arguments: %v", err)
 	}
 	ctx := context.Background()
-
+	
 	gitRepo, localRepoPath, pathToDelete, err := ddbcmain.EnsureLocalRepo(
 		ctx,
 		ddbcCfg.LocalRepoRoot,
@@ -44,7 +45,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Repo Error: %v", err)
 	}
-
+	
 	var dockerClient *client.Client
 	if strings.TrimSpace(ddbcCfg.DockerSshAddress) != "" {
 		dockerClient, err = ddbcmain.NewSshTunneledDockerClient(
@@ -70,13 +71,13 @@ func main() {
 			log.Fatalf("Docker client close error: %v", err)
 		}
 	}(dockerClient)
-
+	
 	imageName, err := ddbcmain.EnsureContainerImage(
 		ctx,
 		dockerClient,
 		ddbcCfg.ToolchainAndVer,
 	)
-
+	
 	for _, target := range ddbcCfg.Targets {
 		err := processTarget(
 			ctx,
@@ -90,7 +91,7 @@ func main() {
 			fmt.Printf("Failed to process target %#v: %v", target, err)
 		}
 	}
-
+	
 	fmt.Println("DDBC Done.")
 }
 
@@ -104,9 +105,9 @@ func processTarget(
 ) error {
 	binaryName := targetSpec.GetArtifactName()
 	outputPath := filepath.Join(localRepoPath, binaryName)
-
+	
 	fmt.Printf("Building for %s/%s...\n", targetSpec.Os, targetSpec.Arch)
-
+	
 	if err := ddbcmain.BuildInContainer(
 		ctx,
 		dockerClient,
@@ -118,10 +119,10 @@ func processTarget(
 	); err != nil {
 		return fmt.Errorf("Build failed for %s: %v", binaryName, err)
 	}
-
+	
 	if ddbcCfg.HasAnyStoreSpec() {
 		fmt.Printf("Uploading %s to S3...\n", binaryName)
-
+		
 		objectKey := path.Join(ddbcCfg.StoreFolders, binaryName)
 		if err := ddbcmain.UploadToS3(
 			ctx,
@@ -132,21 +133,25 @@ func processTarget(
 			log.Printf("Upload failed for %s: %v", binaryName, err)
 		}
 	}
-
+	
 	localDestDir := strings.TrimSpace(ddbcCfg.LocalDestDir)
 	if localDestDir != "" {
 		if err := os.MkdirAll(localDestDir, 0755); err != nil {
 			return fmt.Errorf("Failed to create local dest: %v", err)
 		}
-
+		
 		destPath := filepath.Join(localDestDir, binaryName)
 		if err := copyFile(outputPath, destPath); err != nil {
 			log.Printf("Failed to copy binary to local: %v", err)
 		} else {
+			if runtime.GOOS == "darwin" {
+				// only macOS due to the filesystem of Windows has no permissions
+				os.Chmod(destPath, 0755)
+			}
 			fmt.Printf("Binary saved to: %s\n", destPath)
 		}
 	}
-
+	
 	return nil
 }
 
@@ -164,7 +169,7 @@ func copyFile(
 			fmt.Printf("srcFile close failed with %#v\n", err)
 		}
 	}(srcFile)
-
+	
 	dstFile, err := os.Create(dstPath)
 	if err != nil {
 		return err
@@ -175,7 +180,7 @@ func copyFile(
 			fmt.Printf("dstFile close failed with %#v\n", err)
 		}
 	}(dstFile)
-
+	
 	_, err = io.Copy(dstFile, srcFile)
 	return err
 }

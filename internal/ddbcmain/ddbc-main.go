@@ -14,7 +14,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -28,9 +28,9 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
-	
+
 	cryptossh "golang.org/x/crypto/ssh"
-	
+
 	"github.com/aki-kuramoto/dokadoka-bc/internal/ddbccfg"
 	"github.com/aki-kuramoto/dokadoka-bc/internal/encoderepopath"
 )
@@ -68,11 +68,11 @@ func EnsureLocalRepo(
 		if err != nil {
 			log.Fatalf("Failed to create tmp dir: %v", err)
 		}
-		
+
 		localRepoRoot = tmpDir
 		pathToDelete = tmpDir
 	}
-	
+
 	gitRepo, localRepoPath, err = cloneOrFetch(
 		ctx,
 		localRepoRoot,
@@ -85,7 +85,7 @@ func EnsureLocalRepo(
 	if err != nil {
 		return nil, "", pathToDelete, err
 	}
-	
+
 	if err := checkoutTarget(
 		ctx,
 		gitRepo,
@@ -93,7 +93,7 @@ func EnsureLocalRepo(
 	); err != nil {
 		log.Fatalf("Checkout Error: %v", err)
 	}
-	
+
 	return gitRepo, localRepoPath, pathToDelete, nil
 }
 
@@ -102,21 +102,21 @@ func EnsureContainerImage(
 	dockerClient *client.Client,
 	toolchainAndVer string,
 ) (string, error) {
-	
+
 	// imageName := "golang:1.22-alpine"
 	imageName := "golang:1.25.5-alpine3.23"
-	
+
 	_, _, err := dockerClient.ImageInspectWithRaw(ctx, imageName)
 	if err == nil {
 		// OK, the image is available
 		return imageName, nil
 	}
-	
+
 	if err := pullImageAndWaitForCompletion(ctx, dockerClient, imageName); err != nil {
 		// NG, failed to pull the image
 		return "", err
 	}
-	
+
 	// OK, it's ready
 	return imageName, nil
 }
@@ -130,11 +130,11 @@ func BuildInContainer(
 	ddbcCfg *ddbccfg.DdbcConfig,
 	imageName string,
 ) error {
-	
+
 	// The container's side directory name
 	// A long name like this is suitable for easy grasping. "src? which?"
 	workingDirectoryName := "/shared-working-dir"
-	
+
 	command := []string{
 		"go",
 		"build",
@@ -142,7 +142,7 @@ func BuildInContainer(
 		binaryName,
 	}
 	command = append(command, targetSpec.Params...)
-	
+
 	containerCfg := &container.Config{
 		Image: imageName,
 		Env: []string{
@@ -153,13 +153,13 @@ func BuildInContainer(
 		Cmd:        command,
 		WorkingDir: workingDirectoryName,
 	}
-	
+
 	if runtime.GOOS != "windows" {
 		// On posix environment, specify the user and group.
 		// (Avoid problem on Windows, Windows Host returns -1:-1)
 		containerCfg.User = fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
 	}
-	
+
 	dockerSshAddr := strings.TrimSpace(ddbcCfg.DockerSshAddress)
 	repoPathOnContainer, err := convertRepoPathForContainerIfRequired(
 		localRepoPath,
@@ -168,7 +168,7 @@ func BuildInContainer(
 	if err != nil {
 		repoPathOnContainer = localRepoPath
 	}
-	
+
 	hostCfg := &container.HostConfig{
 		Mounts: []mount.Mount{
 			{
@@ -178,7 +178,7 @@ func BuildInContainer(
 			},
 		},
 	}
-	
+
 	containerCreateResponse, err := dockerClient.ContainerCreate(
 		ctx,
 		containerCfg,
@@ -199,7 +199,7 @@ func BuildInContainer(
 			fmt.Printf("Client::ContainerRemove failed with %#v\n", err)
 		}
 	}(dockerClient, ctx, containerCreateResponse.ID, container.RemoveOptions{})
-	
+
 	if err := dockerClient.ContainerStart(
 		ctx,
 		containerCreateResponse.ID,
@@ -208,7 +208,7 @@ func BuildInContainer(
 		fmt.Printf("Client::ContainerStart failed with %#v\n", err)
 		return err
 	}
-	
+
 	logOptions := container.LogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
@@ -223,7 +223,7 @@ func BuildInContainer(
 	if err != nil {
 		return err
 	}
-	
+
 	go func() {
 		defer func(out io.ReadCloser) {
 			err := out.Close()
@@ -231,10 +231,10 @@ func BuildInContainer(
 				fmt.Printf("close reader of Client::ContainerLogs failed with %#v\n", err)
 			}
 		}(out)
-		
+
 		_, _ = stdcopy.StdCopy(os.Stdout, os.Stderr, out)
 	}()
-	
+
 	statusChan, errChan := dockerClient.ContainerWait(
 		ctx,
 		containerCreateResponse.ID,
@@ -251,7 +251,7 @@ func BuildInContainer(
 			)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -261,18 +261,18 @@ func UploadToS3(
 	objectKey string,
 	ddbcCfg *ddbccfg.DdbcConfig,
 ) error {
-	
+
 	customResolver := aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
 		if ddbcCfg.StoreEndpoint == "" {
 			return aws.Endpoint{}, &aws.EndpointNotFoundError{}
 		}
-		
+
 		return aws.Endpoint{
 			URL:           ddbcCfg.StoreEndpoint,
 			SigningRegion: ddbcCfg.StoreRegionName,
 		}, nil
 	})
-	
+
 	staticCredentialsProvider := credentials.NewStaticCredentialsProvider(
 		ddbcCfg.StoreAccessKey,
 		ddbcCfg.StoreSecretKey,
@@ -286,14 +286,14 @@ func UploadToS3(
 	if err != nil {
 		return err
 	}
-	
+
 	s3Client := s3.NewFromConfig(
 		s3Cfg,
 		func(opts *s3.Options) {
 			opts.UsePathStyle = true
 		},
 	)
-	
+
 	tgtFileReader, err := os.Open(targetFilePath)
 	if err != nil {
 		return err
@@ -304,13 +304,13 @@ func UploadToS3(
 			fmt.Printf("close reader of target file failed with %#v\n", err)
 		}
 	}(tgtFileReader)
-	
+
 	_, err = s3Client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(ddbcCfg.StoreBucketName),
 		Key:    aws.String(objectKey),
 		Body:   tgtFileReader,
 	})
-	
+
 	return err
 }
 
@@ -328,7 +328,7 @@ func NewSshTunneledDockerClient(
 	if err != nil {
 		return nil, err
 	}
-	
+
 	signer, err := cryptossh.ParsePrivateKey(privateKeyContents)
 	if err != nil {
 		passphrase := []byte(privateKeyPassphrase)
@@ -337,7 +337,7 @@ func NewSshTunneledDockerClient(
 			return nil, err
 		}
 	}
-	
+
 	sshConfig := &cryptossh.ClientConfig{
 		User: username,
 		Auth: []cryptossh.AuthMethod{
@@ -345,12 +345,12 @@ func NewSshTunneledDockerClient(
 		},
 		HostKeyCallback: cryptossh.InsecureIgnoreHostKey(),
 	}
-	
+
 	sshClient, err := cryptossh.Dial("tcp", sshAddress, sshConfig)
 	if err != nil {
 		return nil, fmt.Errorf("ssh connection failed: %w", err)
 	}
-	
+
 	remoteSocketPath := dockerHost
 	if asUrl, err := url.Parse(dockerHost); err != nil {
 		remoteSocketPath = strings.TrimPrefix(dockerHost, "unix://")
@@ -359,11 +359,11 @@ func NewSshTunneledDockerClient(
 			remoteSocketPath = asUrl.Path
 		}
 	}
-	
+
 	dialer := func(ctx context.Context, network, addr string) (net.Conn, error) {
 		return sshClient.Dial("unix", remoteSocketPath)
 	}
-	
+
 	result, err := client.NewClientWithOpts(
 		client.WithHost(dockerHost),
 		client.WithDialContext(dialer),
@@ -381,15 +381,15 @@ func getGitAuth(
 		// no auth
 		return nil
 	}
-	
+
 	privateKeyFilenameToPass := expandHomeIfRequired(gitSshPrivateKeyFilename)
-	
+
 	publicKeys, err := gitssh.NewPublicKeysFromFile(gitSshUsername, privateKeyFilenameToPass, gitSshPrivateKeyPassword)
 	if err != nil {
 		log.Printf("Warning: Failed to load SSH key: %v", err)
 		return nil
 	}
-	
+
 	// Avoid errors around known-hosts
 	publicKeys.HostKeyCallback = cryptossh.InsecureIgnoreHostKey()
 	return publicKeys
@@ -409,7 +409,7 @@ func cloneOrFetch(
 		gitSshUsername,
 		gitSshPrivateKeyPassphrase,
 	)
-	
+
 	encodedRepoDir := encoderepopath.Encode(sourceRepoUrl)
 	localRepoPath := filepath.Join(localRepoRoot, encodedRepoDir)
 	var err error
@@ -418,35 +418,35 @@ func cloneOrFetch(
 		fmt.Printf("Warning: Failed to get absolute path for %s: %v\n", localRepoPath, err)
 	}
 	dotGitDir := filepath.Join(localRepoPath, ".git")
-	
+
 	if _, err := os.Stat(dotGitDir); os.IsNotExist(err) {
 		if err = os.MkdirAll(localRepoRoot, 0755); err != nil && !os.IsExist(err) {
 			log.Fatalf("Failed to ensure root dir: %v", err)
 		}
-		
+
 		fmt.Printf("Cloning new repository into %s...\n", localRepoPath)
-		
+
 		opts := &git.CloneOptions{
 			URL:      sourceRepoUrl,
 			Auth:     gitAuth,
 			Progress: os.Stdout,
 		}
-		
+
 		gitRepo, err := git.PlainClone(localRepoPath, false, opts)
 		if err != nil {
 			return nil, "", err
 		}
-		
+
 		return gitRepo, "", nil
 	}
-	
+
 	fmt.Printf("Opening existing repository in %s...\n", localRepoPath)
-	
+
 	gitRepo, err := git.PlainOpen(localRepoPath)
 	if err != nil {
 		return nil, "", err
 	}
-	
+
 	fmt.Println("Fetching updates...")
 	err = gitRepo.Fetch(&git.FetchOptions{
 		Auth:     gitAuth,
@@ -459,7 +459,7 @@ func cloneOrFetch(
 			return nil, "", err
 		}
 	}
-	
+
 	return gitRepo, localRepoPath, nil
 }
 
@@ -472,16 +472,16 @@ func checkoutTarget(
 	if err != nil {
 		return err
 	}
-	
+
 	const (
 		TryAsHash = iota
 		TryAsTag
 		TryAsBranch
 	)
-	
+
 	for i := TryAsHash; i <= TryAsBranch; i++ {
 		checkoutOpts := &git.CheckoutOptions{}
-		
+
 		switch i {
 		case TryAsHash:
 			checkoutOpts.Hash = plumbing.NewHash(tagOrHash)
@@ -498,11 +498,11 @@ func checkoutTarget(
 			break
 		}
 	}
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to checkout %s: %v", tagOrHash, err)
 	}
-	
+
 	ref, _ := gitRepo.Head()
 	fmt.Printf("Checked out at: %s (%s)\n", tagOrHash, ref.Hash().String()[:8])
 	return nil
@@ -526,20 +526,20 @@ func pullImageAndWaitForCompletion(
 			}
 		}
 	}(reader)
-	
+
 	var wg sync.WaitGroup
 	wg.Add(1)
-	
+
 	go func() {
 		defer wg.Done()
 		_, _ = io.Copy(os.Stdout, reader)
 	}()
-	
+
 	fmt.Printf("Pulling %s in background...\n", imageName)
-	
+
 	wg.Wait()
 	fmt.Println("Pull completed.")
-	
+
 	return nil
 }
 
@@ -551,13 +551,13 @@ func convertRepoPathForContainerIfRequired(
 		// as-is
 		return hostRepoPath, nil
 	}
-	
+
 	if dockerSshAddr == "" {
 		// For DockerDesktop for Windows and its compatibles,
 		// They will convert it well probably
 		return hostRepoPath, nil
 	}
-	
+
 	isLocalSsh := strings.Contains(dockerSshAddr, "localhost") ||
 		strings.Contains(dockerSshAddr, "127.0.0.1") ||
 		strings.Contains(dockerSshAddr, "[::1]")
@@ -566,7 +566,7 @@ func convertRepoPathForContainerIfRequired(
 		// for ignoring the error, both return
 		return hostRepoPath, errors.New("remote Docker connection detected: DDBC currently lacks additional mount features, the process will fail due to an isolated filesystem later")
 	}
-	
+
 	pathSlashSeparated := filepath.ToSlash(hostRepoPath)
 	if len(pathSlashSeparated) >= 2 && pathSlashSeparated[1] == ':' {
 		// Windows native form to WSL mounted form
@@ -574,7 +574,7 @@ func convertRepoPathForContainerIfRequired(
 		mangledPath := "/mnt/" + driveLetter + pathSlashSeparated[2:]
 		return mangledPath, nil
 	}
-	
+
 	return pathSlashSeparated, nil
 }
 
@@ -588,17 +588,17 @@ func expandHomeIfRequired(path string) string {
 		// If you want to add an OS to this manual expansion, please provide the details.
 		return path
 	}
-	
+
 	if !strings.HasPrefix(path, "~") {
 		return path
 	}
-	
+
 	currUser, err := user.Current()
 	if err != nil {
 		fmt.Println("Error getting current user:", err)
 		return path
 	}
-	
+
 	result := filepath.Join(currUser.HomeDir, strings.TrimPrefix(path, "~"))
 	return result
 }
