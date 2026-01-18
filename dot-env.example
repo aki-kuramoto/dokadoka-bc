@@ -21,7 +21,7 @@
 # DDBC_GIT_SSH_PRIVATE_KEY_PASSPHRASE=Im_considering_enabling_agent_later
 # DDBC_TOOLCHAIN_AND_VER=golang:1.25.5
 
-# target specs have not corresponding environment variables
+# target specs have no corresponding environment variables
 # so you should specify these as command parameters
 # example:
 # ```
