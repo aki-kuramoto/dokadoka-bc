@@ -579,7 +579,13 @@ func convertRepoPathForContainerIfRequired(
 }
 
 func expandHomeIfRequired(path string) string {
-	if runtime.GOOS != "windows" {
+	switch runtime.GOOS {
+	case "windows", "darwin":
+		break
+	case "linux", "freebsd", "netbsd", "openbsd", "solaris", "dragonfly":
+		return path
+	default:
+		// If you want to add an OS to this manual expansion, please provide the details.
 		return path
 	}
 	
