@@ -9,7 +9,10 @@
 # DDBC_STORE_BUCKET_NAME=
 # DDBC_STORE_FOLDERS=
 # DDBC_STORE_REGION_NAME=
+
+# `/tmp` doesn't work for my macOS + podman (mapping problem). Use `/Users/your-name/tmp` or something else instead.
 # DDBC_LOCAL_REPO_ROOT=/tmp/ddbc/
+
 # DDBC_DOCKER_SSH_ADDRESS=localhost:2222
 # DDBC_DOCKER_SSH_USERNAME=monika
 # DDBC_DOCKER_SSH_PRIVATE_KEY_FILENAME=~/.ssh/id_monika
