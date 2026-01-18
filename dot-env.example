@@ -1,0 +1,32 @@
+# dot-env.example
+# Rename this file to `.env` to enable.
+
+# DDBC_DOCKER_HOST=unix:///var/run/docker.sock
+# DDBC_LOCAL_DEST_DIR=
+# DDBC_STORE_ENDPOINT=
+# DDBC_STORE_ACCESS_KEY=
+# DDBC_STORE_SECRET_KEY=
+# DDBC_STORE_BUCKET_NAME=
+# DDBC_STORE_FOLDERS=
+# DDBC_STORE_REGION_NAME=
+# DDBC_LOCAL_REPO_ROOT=/tmp/ddbc/
+# DDBC_DOCKER_SSH_ADDRESS=localhost:2222
+# DDBC_DOCKER_SSH_USERNAME=monika
+# DDBC_DOCKER_SSH_PRIVATE_KEY_FILENAME=~/.ssh/id_monika
+# DDBC_DOCKER_SSH_PRIVATE_KEY_PASSPHRASE=
+# DDBC_SOURCE_REPO_URL=git@github.com:aki-kuramoto/chi.git
+# DDBC_SOURCE_TAG=main
+# DDBC_GIT_SSH_USERNAME=git
+# DDBC_GIT_SSH_PRIVATE_KEY_FILENAME=~/.ssh/your-github-id-pem-for-automation
+# DDBC_GIT_SSH_PRIVATE_KEY_PASSPHRASE=Im_considering_enabling_agent_later
+# DDBC_TOOLCHAIN_AND_VER=golang:1.25.5
+
+# target specs have not corresponding environment variables
+# so you should specify these as command parameters
+# example:
+# ```
+# $ ddbc -t chi-windows-x64 -s windows -a amd64 -p ./cmd/chi -t chi-linux-amd64 -s linux -a amd64 -p ./cmd/chi -t chi-macos-arm64 -s darwin -a arm64 -p ./cmd/chi
+# ```
+
+
+
