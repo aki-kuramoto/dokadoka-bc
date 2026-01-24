@@ -7,7 +7,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
-
+	
 	"github.com/joho/godotenv"
 	"github.com/spf13/pflag"
 )
@@ -32,6 +32,7 @@ type DdbcConfig struct {
 	GitSshPrivateKeyFilename      string
 	GitSshPrivateKeyPassphrase    string
 	ToolchainAndVer               string
+	Gomodcache                    string
 	// TODO: ビルドオプションにお節介をしないフラグを追加する.
 	Targets []*TargetSpec
 }
@@ -56,6 +57,7 @@ func newDdbcConfig(
 	gitSshPrivateKeyFilename string,
 	gitSshPrivateKeyPassphrase string,
 	toolchainAndVer string,
+	gomodcache string,
 	targets []*TargetSpec,
 ) *DdbcConfig {
 	return &DdbcConfig{
@@ -78,6 +80,7 @@ func newDdbcConfig(
 		GitSshPrivateKeyFilename:      gitSshPrivateKeyFilename,
 		GitSshPrivateKeyPassphrase:    gitSshPrivateKeyPassphrase,
 		ToolchainAndVer:               toolchainAndVer,
+		Gomodcache:                    gomodcache,
 		Targets:                       targets,
 	}
 }
@@ -89,7 +92,7 @@ func ParseDdbcArgs(args []string) (*DdbcConfig, error) {
 		log.Print("Failed to load `.env` file.")
 		// .env is optional
 	}
-
+	
 	// the weakest default Docker host depends on the host platform for no specs
 	defaultDockerHost := defaultDockerHostByOs()
 	// if the general DOCKER_HOST is presented, use it instead of the weakest default
@@ -98,11 +101,11 @@ func ParseDdbcArgs(args []string) (*DdbcConfig, error) {
 	// if the DDBC specific DDBC_DOCKER_HOST, it wins over the lesser default
 	// defaultDockerHost = envOrDefault("DDBC_DOCKER_HOST", defaultDockerHost)
 	// finally `--docker-host` wins over everything else
-
+	
 	flagSet := pflag.NewFlagSet("ddbc", pflag.ContinueOnError)
 	// prevent wasting target flags
 	flagSet.SetInterspersed(false)
-
+	
 	var toOpts struct {
 		dockerHost                    string
 		localDestDir                  string
@@ -123,8 +126,9 @@ func ParseDdbcArgs(args []string) (*DdbcConfig, error) {
 		gitSshPrivateKeyFilename      string
 		gitSshPrivateKeyPassphrase    string
 		toolchainAndVer               string
+		gomodcache                    string
 	}
-
+	
 	// throughout flags only
 	flagSet.StringVar(&toOpts.dockerHost, "docker-host", envOrDefault("DDBC_DOCKER_HOST", defaultDockerHost), "docker host")
 	flagSet.StringVar(&toOpts.localDestDir, "local-dest-dir", envOrDefault("DDBC_LOCAL_DEST_DIR", ""), "local artifact destination dir")
@@ -145,18 +149,19 @@ func ParseDdbcArgs(args []string) (*DdbcConfig, error) {
 	flagSet.StringVar(&toOpts.gitSshPrivateKeyFilename, "git-ssh-private-key-filename", envOrDefault("DDBC_GIT_SSH_PRIVATE_KEY_FILENAME", ""), "git ssh private key filename")
 	flagSet.StringVar(&toOpts.gitSshPrivateKeyPassphrase, "git-ssh-private-key-passphrase", envOrDefault("DDBC_GIT_SSH_PRIVATE_KEY_PASSPHRASE", ""), "git ssh private key passphrase")
 	flagSet.StringVar(&toOpts.toolchainAndVer, "toolchain-and-ver", envOrDefault("DDBC_TOOLCHAIN_AND_VER", "golang:1.25.5"), "toolchain image and version")
-
+	flagSet.StringVar(&toOpts.gomodcache, "gomodcache", envOrDefault("DDBC_GOMODCACHE", ""), "be used as the Go module cache instead of $GOPATH/pkg/mod")
+	
 	restOpts, err := parseKnownOnly(flagSet, args)
 	if err != nil {
 		return nil, err
 	}
-
+	
 	// parse targets
 	targets, err := parseTargets(restOpts)
 	if err != nil {
 		return nil, err
 	}
-
+	
 	ddbcCfg := newDdbcConfig(
 		toOpts.dockerHost,
 		toOpts.localDestDir,
@@ -177,21 +182,22 @@ func ParseDdbcArgs(args []string) (*DdbcConfig, error) {
 		toOpts.gitSshPrivateKeyFilename,
 		toOpts.gitSshPrivateKeyPassphrase,
 		toOpts.toolchainAndVer,
+		toOpts.gomodcache,
 		targets,
 	)
-
+	
 	if strings.TrimSpace(ddbcCfg.SourceRepoUrl) == "" {
 		return nil, errors.New("DDBC_SOURCE_REPO_URL or --source-repo-url is required")
 	}
-
+	
 	if ddbcCfg.LocalDestDir == "" && !ddbcCfg.HasAnyStoreSpec() {
 		ddbcCfg.LocalDestDir = "."
 	}
-
+	
 	if len(ddbcCfg.Targets) == 0 {
 		return nil, errors.New("at least one target is required: `(-t|--target) filename [TGT_OPTS]...`")
 	}
-
+	
 	return ddbcCfg, nil
 }
 
@@ -204,62 +210,62 @@ func parseKnownOnly(
 	// flagSet.Parse will stop at the first non-flag because SetInterspersed(false)
 	// but our syntax can start with -t (flag). We want to stop when we hit -t/--target too.
 	cut := len(args)
-
+	
 	for idx := 0; idx < len(args); idx += 1 {
 		if args[idx] == "-t" || args[idx] == "--target" {
 			cut = idx
 			break
 		}
 	}
-
+	
 	if err := flagSet.Parse(args[:cut]); err != nil {
 		return nil, err
 	}
-
+	
 	return args[cut:], nil
 }
 
 func parseTargets(args []string) ([]*TargetSpec, error) {
 	var targetSpecList []*TargetSpec
-
+	
 	idx := 0
 	for idx < len(args) {
 		if args[idx] != "-t" && args[idx] != "--target" {
 			return nil, fmt.Errorf("unexpected token %q (expected -t/--target)", args[idx])
 		}
 		idx += 1
-
+		
 		if idx >= len(args) {
 			return nil, errors.New("missing filename after -t/--target")
 		}
 		filename := args[idx]
 		idx += 1
-
+		
 		// collect until next -t/--target or end
 		startedAt := idx
 		for (idx < len(args)) && (args[idx] != "-t") && (args[idx] != "--target") {
 			idx += 1
 		}
 		tgtArgs := args[startedAt:idx]
-
+		
 		tgtFlagSet := pflag.NewFlagSet("target", pflag.ContinueOnError)
 		tgtFlagSet.SetInterspersed(false)
-
+		
 		var tgtOs string
 		var tgtArch string
 		var tgtParams []string
 		tgtFlagSet.StringVarP(&tgtOs, "os", "s", "", "target os")
 		tgtFlagSet.StringVarP(&tgtArch, "arch", "a", "", "target architecture")
 		tgtFlagSet.StringArrayVarP(&tgtParams, "param", "p", nil, "additional parameters to pass to the build command")
-
+		
 		if err := tgtFlagSet.Parse(tgtArgs); err != nil {
 			return nil, err
 		}
-
+		
 		if len(tgtFlagSet.Args()) != 0 {
 			return nil, fmt.Errorf("unknown target args: %v", tgtFlagSet.Args())
 		}
-
+		
 		targetSpecList = append(targetSpecList, &TargetSpec{
 			Filename: filename,
 			Os:       tgtOs,
@@ -267,7 +273,7 @@ func parseTargets(args []string) ([]*TargetSpec, error) {
 			Params:   tgtParams,
 		})
 	}
-
+	
 	return targetSpecList, nil
 }
 
@@ -278,7 +284,7 @@ func envOrDefault(
 	if envValue, ok := os.LookupEnv(envName); ok {
 		return envValue
 	}
-
+	
 	return defaultValue
 }
 
@@ -287,9 +293,9 @@ func defaultDockerHostByOs() string {
 		// named pipe for DockerDesktop for Windows and its compatibles
 		return "npipe:////./pipe/docker_engine"
 	}
-
+	
 	// for Linux, macOS, and other decent systems
-
+	
 	// check Rootless Docker sock existence
 	if runtimeDir := os.Getenv("XDG_RUNTIME_DIR"); runtimeDir != "" {
 		runtimeDockerSock := runtimeDir + "/docker.sock"
@@ -298,7 +304,7 @@ func defaultDockerHostByOs() string {
 			return rootlessPath
 		}
 	}
-
+	
 	// the standard
 	return "unix:///var/run/docker.sock"
 }

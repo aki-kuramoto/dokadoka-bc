@@ -78,6 +78,11 @@ func main() {
 		ddbcCfg.ToolchainAndVer,
 	)
 	
+	goModCachePath, err := ddbcmain.EnsureGoModCache(
+		ctx,
+		ddbcCfg,
+	)
+	
 	for _, target := range ddbcCfg.Targets {
 		err := processTarget(
 			ctx,
@@ -86,6 +91,7 @@ func main() {
 			localRepoPath,
 			dockerClient,
 			imageName,
+			goModCachePath,
 		)
 		if err != nil {
 			fmt.Printf("Failed to process target %#v: %v", target, err)
@@ -102,6 +108,7 @@ func processTarget(
 	localRepoPath string,
 	dockerClient *client.Client,
 	imageName string,
+	goModCachePath string,
 ) error {
 	binaryName := targetSpec.GetArtifactName()
 	outputPath := filepath.Join(localRepoPath, binaryName)
@@ -116,6 +123,7 @@ func processTarget(
 		targetSpec,
 		ddbcCfg,
 		imageName,
+		goModCachePath,
 	); err != nil {
 		return fmt.Errorf("Build failed for %s: %v", binaryName, err)
 	}

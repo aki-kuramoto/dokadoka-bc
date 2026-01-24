@@ -28,6 +28,7 @@ At the first, `.env` file is also supported.
 | `DDBC_SOURCE_TAG` | --source-tag | DDBC will checkout the commit specified by the variable | "" (empty) |
 | `DDBC_GIT_SSH_PRIVATE_KEY_FILENAME` | --git-ssh-private-key-filename | DDBC will use the private key to clone the repository | "" (empty) |
 | `DDBC_TOOLCHAIN_AND_VER` | --toolchain-and-ver | DDBC will select the image to use and the command to build by the variable | "golang:1.25.5" |
+| `DDBC_GOMODCACHE` | --gomodcache | BBDC will specify the Go module cache path as the GOMODCACHE; it will be used instead of $GOPATH/pkg/mod" | "" (empty) |
 
 ## DDBC_DOCKER_HOST for Windows
 You can specify "npipe:////./pipe/docker_engine" to DDBC_DOCKER_HOST if you use Docker Desktop or a compatible (e.g., Rancher Desktop).

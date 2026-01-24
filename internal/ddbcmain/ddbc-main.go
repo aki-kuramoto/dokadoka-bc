@@ -77,7 +77,6 @@ func EnsureLocalRepo(
 		ctx,
 		localRepoRoot,
 		sourceRepoUrl,
-		tagOrHashOrBranch,
 		gitSshUsername,
 		gitSshPrivateKeyFilename,
 		gitSshPrivateKeyPassphrase,
@@ -129,11 +128,24 @@ func BuildInContainer(
 	targetSpec *ddbccfg.TargetSpec,
 	ddbcCfg *ddbccfg.DdbcConfig,
 	imageName string,
+	goModCachePath string,
 ) error {
 
 	// The container's side directory name
 	// A long name like this is suitable for easy grasping. "src? which?"
 	workingDirectoryName := "/shared-working-dir"
+
+	dockerSshAddr := strings.TrimSpace(ddbcCfg.DockerSshAddress)
+
+	goModCachePathOnContainer := goModCachePath
+	if goModCachePathOnContainer != "" {
+		if pathOnContainer, err := convertCachePathForContainerIfRequired(
+			goModCachePath,
+			dockerSshAddr,
+		); err == nil {
+			goModCachePathOnContainer = pathOnContainer
+		}
+	}
 
 	command := []string{
 		"go",
@@ -153,6 +165,10 @@ func BuildInContainer(
 		Cmd:        command,
 		WorkingDir: workingDirectoryName,
 	}
+	const goPkgMod = "/go/pkg/mod"
+	if goModCachePathOnContainer != "" {
+		containerCfg.Env = append(containerCfg.Env, "GOMODCACHE="+goPkgMod)
+	}
 
 	if runtime.GOOS != "windows" {
 		// On posix environment, specify the user and group.
@@ -160,7 +176,6 @@ func BuildInContainer(
 		containerCfg.User = fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
 	}
 
-	dockerSshAddr := strings.TrimSpace(ddbcCfg.DockerSshAddress)
 	repoPathOnContainer, err := convertRepoPathForContainerIfRequired(
 		localRepoPath,
 		dockerSshAddr,
@@ -177,6 +192,13 @@ func BuildInContainer(
 				Target: workingDirectoryName,
 			},
 		},
+	}
+	if goModCachePathOnContainer != "" {
+		hostCfg.Mounts = append(hostCfg.Mounts, mount.Mount{
+			Type:   mount.TypeBind,
+			Source: goModCachePathOnContainer,
+			Target: goPkgMod,
+		})
 	}
 
 	containerCreateResponse, err := dockerClient.ContainerCreate(
@@ -372,6 +394,39 @@ func NewSshTunneledDockerClient(
 	return result, err
 }
 
+func EnsureGoModCache(
+	ctx context.Context,
+	ddbcCfg *ddbccfg.DdbcConfig,
+) (string, error) {
+
+	goModCachePath := strings.TrimSpace(ddbcCfg.Gomodcache)
+	if goModCachePath == "" {
+		return "", nil
+	}
+
+	absGoModCachePath, err := filepath.Abs(goModCachePath)
+	if err != nil {
+		fmt.Printf("Warning: Failed to get absolute path for %s: %v\n", goModCachePath, err)
+	}
+
+	_, err = os.Stat(absGoModCachePath)
+	os.IsNotExist(err)
+	if err == nil {
+		return absGoModCachePath, nil
+	}
+
+	if !os.IsNotExist(err) {
+		return "", err
+	}
+
+	if err = os.MkdirAll(absGoModCachePath, 0755); err != nil && !os.IsExist(err) {
+		log.Printf("Failed to ensure go mod cache dir: %v", err)
+		return "", err
+	}
+
+	return absGoModCachePath, nil
+}
+
 func getGitAuth(
 	gitSshPrivateKeyFilename string,
 	gitSshUsername string,
@@ -399,7 +454,6 @@ func cloneOrFetch(
 	ctx context.Context,
 	localRepoRoot string,
 	sourceRepoUrl string,
-	tagOrHashOrBranch string,
 	gitSshUsername string,
 	gitSshPrivateKeyFilename string,
 	gitSshPrivateKeyPassphrase string,
@@ -547,15 +601,29 @@ func convertRepoPathForContainerIfRequired(
 	hostRepoPath string,
 	dockerSshAddr string,
 ) (string, error) {
+	return convertPathForContainerIfRequired(hostRepoPath, dockerSshAddr)
+}
+
+func convertCachePathForContainerIfRequired(
+	hostCachePath string,
+	dockerSshAddr string,
+) (string, error) {
+	return convertPathForContainerIfRequired(hostCachePath, dockerSshAddr)
+}
+
+func convertPathForContainerIfRequired(
+	hostPath string,
+	dockerSshAddr string,
+) (string, error) {
 	if runtime.GOOS != "windows" {
 		// as-is
-		return hostRepoPath, nil
+		return hostPath, nil
 	}
 
 	if dockerSshAddr == "" {
 		// For DockerDesktop for Windows and its compatibles,
 		// They will convert it well probably
-		return hostRepoPath, nil
+		return hostPath, nil
 	}
 
 	isLocalSsh := strings.Contains(dockerSshAddr, "localhost") ||
@@ -564,10 +632,10 @@ func convertRepoPathForContainerIfRequired(
 	if !isLocalSsh {
 		fmt.Println("warn: DDBC currently lacks additional mount features, the process will fail due to an isolated filesystem later")
 		// for ignoring the error, both return
-		return hostRepoPath, errors.New("remote Docker connection detected: DDBC currently lacks additional mount features, the process will fail due to an isolated filesystem later")
+		return hostPath, errors.New("remote Docker connection detected: DDBC currently lacks additional mount features, the process will fail due to an isolated filesystem later")
 	}
 
-	pathSlashSeparated := filepath.ToSlash(hostRepoPath)
+	pathSlashSeparated := filepath.ToSlash(hostPath)
 	if len(pathSlashSeparated) >= 2 && pathSlashSeparated[1] == ':' {
 		// Windows native form to WSL mounted form
 		driveLetter := strings.ToLower(string(pathSlashSeparated[0]))
