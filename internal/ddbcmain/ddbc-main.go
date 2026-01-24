@@ -156,6 +156,7 @@ func BuildInContainer(
 	command = append(command, targetSpec.Params...)
 
 	containerCfg := &container.Config{
+		// User: will be set later (except Windows)
 		Image: imageName,
 		Env: []string{
 			"GOOS=" + targetSpec.Os,

@@ -11,7 +11,8 @@
 # DDBC_STORE_REGION_NAME=
 
 # `/tmp` doesn't work for my macOS + podman (mapping problem). Use `/Users/your-name/tmp` or something else instead.
-# DDBC_LOCAL_REPO_ROOT=/tmp/ddbc/
+# DDBC_LOCAL_REPO_ROOT=/tmp/ddbc/repos
+# DDBC_GOMODCACHE=/tmp/ddbc/go-mod-cache
 
 # DDBC_DOCKER_SSH_ADDRESS=localhost:2222
 # DDBC_DOCKER_SSH_USERNAME=monika

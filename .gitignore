@@ -33,6 +33,9 @@ go.work.sum
 # env file
 .env
 
+### vi, VIM
+*.swp
+
 ### IntelliJ IDEA ###
 .idea/
 *.iml
