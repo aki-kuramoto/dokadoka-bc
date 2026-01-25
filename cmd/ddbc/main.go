@@ -3,7 +3,6 @@ package main
 
 import (
 	"context"
-	"path"
 	"runtime"
 	"strings"
 	
@@ -131,11 +130,10 @@ func processTarget(
 	if ddbcCfg.HasAnyStoreSpec() {
 		fmt.Printf("Uploading %s to S3...\n", binaryName)
 		
-		objectKey := path.Join(ddbcCfg.StoreFolders, binaryName)
 		if err := ddbcmain.UploadToS3(
 			ctx,
 			outputPath,
-			objectKey,
+			binaryName,
 			ddbcCfg,
 		); err != nil {
 			log.Printf("Upload failed for %s: %v", binaryName, err)

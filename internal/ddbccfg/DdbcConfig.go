@@ -21,6 +21,8 @@ type DdbcConfig struct {
 	StoreBucketName               string
 	StoreFolders                  string
 	StoreRegionName               string
+	StoreMetalinkPrefix           string
+	StoreMetalinkSuffix           string
 	LocalRepoRoot                 string
 	DockerSshAddress              string
 	DockerSshUsername             string
@@ -46,6 +48,8 @@ func newDdbcConfig(
 	storeBucketName string,
 	storeFolders string,
 	storeRegionName string,
+	storeMetalinkPrefix string,
+	storeMetalinkSuffix string,
 	localRepoRoot string,
 	dockerSshAddress string,
 	dockerSshUsername string,
@@ -69,6 +73,8 @@ func newDdbcConfig(
 		StoreBucketName:               storeBucketName,
 		StoreFolders:                  storeFolders,
 		StoreRegionName:               storeRegionName,
+		StoreMetalinkPrefix:           storeMetalinkPrefix,
+		StoreMetalinkSuffix:           storeMetalinkSuffix,
 		LocalRepoRoot:                 localRepoRoot,
 		DockerSshAddress:              dockerSshAddress,
 		DockerSshUsername:             dockerSshUsername,
@@ -115,6 +121,8 @@ func ParseDdbcArgs(args []string) (*DdbcConfig, error) {
 		storeBucketName               string
 		storeFolders                  string
 		storeRegionName               string
+		storeMetalinkPrefix           string
+		storeMetalinkSuffix           string
 		localRepoRoot                 string
 		dockerSshAddress              string
 		dockerSshUsername             string
@@ -138,6 +146,8 @@ func ParseDdbcArgs(args []string) (*DdbcConfig, error) {
 	flagSet.StringVar(&toOpts.storeBucketName, "store-bucket-name", envOrDefault("DDBC_STORE_BUCKET_NAME", ""), "store bucket name")
 	flagSet.StringVar(&toOpts.storeFolders, "store-folders", envOrDefault("DDBC_STORE_FOLDERS", ""), "store folders")
 	flagSet.StringVar(&toOpts.storeRegionName, "store-region-name", envOrDefault("DDBC_STORE_REGION_NAME", ""), "store region name")
+	flagSet.StringVar(&toOpts.storeMetalinkPrefix, "store-metalink-prefix", envOrDefault("DDBC_STORE_METALINK_PREFIX", ""), "(experimental) metalink prefix")
+	flagSet.StringVar(&toOpts.storeMetalinkSuffix, "store-metalink-suffix", envOrDefault("DDBC_STORE_METALINK_SUFFIX", ""), "(experimental) metalink suffix")
 	flagSet.StringVar(&toOpts.localRepoRoot, "local-repo-root", envOrDefault("DDBC_LOCAL_REPO_ROOT", ""), "local repo root")
 	flagSet.StringVar(&toOpts.dockerSshAddress, "docker-ssh-address", envOrDefault("DDBC_DOCKER_SSH_ADDRESS", ""), "docker ssh address")
 	flagSet.StringVar(&toOpts.dockerSshUsername, "docker-ssh-username", envOrDefault("DDBC_DOCKER_SSH_USERNAME", ""), "docker ssh username")
@@ -171,6 +181,8 @@ func ParseDdbcArgs(args []string) (*DdbcConfig, error) {
 		toOpts.storeBucketName,
 		toOpts.storeFolders,
 		toOpts.storeRegionName,
+		toOpts.storeMetalinkPrefix,
+		toOpts.storeMetalinkSuffix,
 		toOpts.localRepoRoot,
 		toOpts.dockerSshAddress,
 		toOpts.dockerSshUsername,
@@ -315,7 +327,9 @@ func (ddbcCfg *DdbcConfig) HasAnyStoreSpec() bool {
 		isNotBlank(ddbcCfg.StoreSecretKey) ||
 		isNotBlank(ddbcCfg.StoreBucketName) ||
 		isNotBlank(ddbcCfg.StoreFolders) ||
-		isNotBlank(ddbcCfg.StoreRegionName)
+		isNotBlank(ddbcCfg.StoreRegionName) ||
+		isNotBlank(ddbcCfg.StoreMetalinkPrefix) ||
+		isNotBlank(ddbcCfg.StoreMetalinkSuffix)
 }
 
 func isNotBlank(strToCheck string) bool {

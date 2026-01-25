@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"os/user"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -281,7 +282,7 @@ func BuildInContainer(
 func UploadToS3(
 	ctx context.Context,
 	targetFilePath string,
-	objectKey string,
+	targetSimpleName string,
 	ddbcCfg *ddbccfg.DdbcConfig,
 ) error {
 
@@ -328,13 +329,51 @@ func UploadToS3(
 		}
 	}(tgtFileReader)
 
+	objectKey := path.Join(ddbcCfg.StoreFolders, targetSimpleName)
 	_, err = s3Client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(ddbcCfg.StoreBucketName),
 		Key:    aws.String(objectKey),
 		Body:   tgtFileReader,
 	})
 
+	if err != nil {
+		return err
+	}
+
+	_, err = makeMetalink(ctx, targetSimpleName, ddbcCfg, s3Client)
+
 	return err
+}
+
+func makeMetalink(
+	ctx context.Context,
+	targetSimpleName string,
+	ddbcCfg *ddbccfg.DdbcConfig,
+	s3Client *s3.Client,
+) (string, error) {
+	objectKey := path.Join(ddbcCfg.StoreFolders, targetSimpleName)
+	if strings.TrimSpace(ddbcCfg.StoreMetalinkPrefix) == "" && strings.TrimSpace(ddbcCfg.StoreMetalinkSuffix) == "" {
+		return "", nil
+	}
+
+	metalinkObjectKey := ddbcCfg.StoreMetalinkPrefix + targetSimpleName + ddbcCfg.StoreMetalinkSuffix
+	rel, err := relPath(metalinkObjectKey, objectKey)
+	if err != nil {
+		return "", err
+	}
+
+	_, err = s3Client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:       aws.String(ddbcCfg.StoreBucketName),
+		Key:          aws.String(metalinkObjectKey),
+		Body:         nil,
+		CacheControl: aws.String("no-cache, no-store, must-revalidate"),
+		Metadata:     map[string]string{"link-to": rel},
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return rel, nil
 }
 
 // NewSshTunneledDockerClient - Creates a new SSH-tunneled Docker client
@@ -670,4 +709,88 @@ func expandHomeIfRequired(path string) string {
 
 	result := filepath.Join(currUser.HomeDir, strings.TrimPrefix(path, "~"))
 	return result
+}
+
+func relPath(
+	basepath string,
+	tgtPath string,
+) (string, error) {
+	const separator = byte('/')
+
+	baseClean := path.Clean(basepath)
+	tgtClean := path.Clean(tgtPath)
+	if strings.EqualFold(tgtClean, baseClean) {
+		return ".", nil
+	}
+
+	if baseClean == "." {
+		baseClean = ""
+	}
+
+	baseSlashed := len(baseClean) > 0 && baseClean[0] == separator
+	tgtSlashed := len(tgtClean) > 0 && tgtClean[0] == separator
+	if baseSlashed != tgtSlashed {
+		return "", errors.New("relPath: can't make " + tgtPath + " relative to " + basepath)
+	}
+
+	bl := len(baseClean)
+	tl := len(tgtClean)
+	var b0, bi, t0, ti int
+	for {
+		for bi < bl && baseClean[bi] != separator {
+			bi++
+		}
+		for ti < tl && tgtClean[ti] != separator {
+			ti++
+		}
+		if !strings.EqualFold(tgtClean[t0:ti], baseClean[b0:bi]) {
+			break
+		}
+		if bi < bl {
+			bi++
+		}
+		if ti < tl {
+			ti++
+		}
+		b0 = bi
+		t0 = ti
+	}
+	if baseClean[b0:bi] == ".." {
+		return "", errors.New("relPath: can't make " + tgtPath + " relative to " + basepath)
+	}
+	if b0 != bl {
+		// Base elements left. Must go up before going down.
+		seps := countNeedle(baseClean[b0:bl], separator)
+		size := 2 + seps*3
+		if tl != t0 {
+			size += 1 + tl - t0
+		}
+		buf := make([]byte, size)
+		n := copy(buf, "..")
+		for i := 0; i < seps; i++ {
+			buf[n] = separator
+			copy(buf[n+1:], "..")
+			n += 3
+		}
+		if t0 != tl {
+			buf[n] = separator
+			copy(buf[n+1:], tgtClean[t0:])
+		}
+		return string(buf), nil
+	}
+	return tgtClean[t0:], nil
+}
+
+func countNeedle(
+	haystack string,
+	needleByte byte,
+) int {
+	asByteSlice := []byte(haystack)
+	counter := 0
+	for _, b := range asByteSlice {
+		if b == needleByte {
+			counter += 1
+		}
+	}
+	return counter
 }
