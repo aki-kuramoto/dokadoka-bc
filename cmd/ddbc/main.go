@@ -5,6 +5,7 @@ import (
 	"context"
 	"runtime"
 	"strings"
+	"sync"
 	
 	"fmt"
 	"io"
@@ -82,21 +83,40 @@ func main() {
 		ddbcCfg,
 	)
 	
-	for _, target := range ddbcCfg.Targets {
-		err := processTarget(
+	if (strings.TrimSpace(goModCachePath) != "") && (len(ddbcCfg.Targets) >= 2) {
+		if err := ddbcmain.DownloadModInContainer(
 			ctx,
-			target,
-			ddbcCfg,
-			localRepoPath,
 			dockerClient,
+			localRepoPath,
+			ddbcCfg,
 			imageName,
 			goModCachePath,
-		)
-		if err != nil {
-			fmt.Printf("Failed to process target %#v: %v", target, err)
+		); err != nil {
+			fmt.Printf("Failed to download mod %v", err)
 		}
 	}
 	
+	var wg sync.WaitGroup
+	for _, target := range ddbcCfg.Targets {
+		wg.Add(1)
+		go func(tgt *ddbccfg.TargetSpec) {
+			defer wg.Done()
+			err := processTarget(
+				ctx,
+				target,
+				ddbcCfg,
+				localRepoPath,
+				dockerClient,
+				imageName,
+				goModCachePath,
+			)
+			if err != nil {
+				fmt.Printf("Failed to process target %#v: %v", target, err)
+			}
+		}(target)
+	}
+	
+	wg.Wait()
 	fmt.Println("DDBC Done.")
 }
 

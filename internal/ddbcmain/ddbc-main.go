@@ -468,6 +468,162 @@ func EnsureGoModCache(
 	return absGoModCachePath, nil
 }
 
+func DownloadModInContainer(
+	ctx context.Context,
+	dockerClient *client.Client,
+	localRepoPath string,
+	ddbcCfg *ddbccfg.DdbcConfig,
+	imageName string,
+	goModCachePath string,
+) error {
+	fmt.Println("--- Pre-downloading (Single Container) ---")
+	// The container's side directory name
+	// A long name like this is suitable for easy grasping. "src? which?"
+	workingDirectoryName := "/shared-working-dir"
+	
+	dockerSshAddr := strings.TrimSpace(ddbcCfg.DockerSshAddress)
+	
+	goModCachePathOnContainer := goModCachePath
+	if goModCachePathOnContainer != "" {
+		if pathOnContainer, err := convertCachePathForContainerIfRequired(
+			goModCachePath,
+			dockerSshAddr,
+		); err == nil {
+			goModCachePathOnContainer = pathOnContainer
+		}
+	}
+	
+	var command []string
+	for _, tgt := range ddbcCfg.Targets {
+		cmd := fmt.Sprintf("export GOOS=%s GOARCH=%s && go mod download", tgt.Os, tgt.Arch)
+		command = append(command, cmd)
+	}
+	fullCmd := strings.Join(command, " && ")
+	
+	containerCfg := &container.Config{
+		// User: will be set later (except Windows)
+		Image: imageName,
+		Env: []string{
+			"CGO_ENABLED=0",
+		},
+		Cmd:        []string{"sh", "-c", fullCmd},
+		WorkingDir: workingDirectoryName,
+	}
+	const goPkgMod = "/go/pkg/mod"
+	if goModCachePathOnContainer != "" {
+		containerCfg.Env = append(containerCfg.Env, "GOMODCACHE="+goPkgMod)
+	}
+	
+	if runtime.GOOS != "windows" {
+		// On posix environment, specify the user and group.
+		// (Avoid problem on Windows, Windows Host returns -1:-1)
+		containerCfg.User = fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
+	}
+	
+	repoPathOnContainer, err := convertRepoPathForContainerIfRequired(
+		localRepoPath,
+		dockerSshAddr,
+	)
+	if err != nil {
+		repoPathOnContainer = localRepoPath
+	}
+	
+	hostCfg := &container.HostConfig{
+		Mounts: []mount.Mount{
+			{
+				Type:   mount.TypeBind,
+				Source: repoPathOnContainer,
+				Target: workingDirectoryName,
+			},
+		},
+	}
+	
+	if goModCachePathOnContainer != "" {
+		hostCfg.Mounts = append(hostCfg.Mounts, mount.Mount{
+			Type:   mount.TypeBind,
+			Source: goModCachePathOnContainer,
+			Target: goPkgMod,
+		})
+	}
+	
+	containerCreateResponse, err := dockerClient.ContainerCreate(
+		ctx,
+		containerCfg,
+		hostCfg,
+		nil,
+		nil,
+		"",
+	)
+	if err != nil {
+		// error during connect:
+		// This may happen when the Docker service is down
+		fmt.Printf("Client::ContainerCreate failed with %#v\n", err)
+		return err
+	}
+	defer func(dockerClient *client.Client, ctx context.Context, containerID string, options container.RemoveOptions) {
+		err := dockerClient.ContainerRemove(ctx, containerID, options)
+		if err != nil {
+			fmt.Printf("Client::ContainerRemove failed with %#v\n", err)
+		}
+	}(dockerClient, ctx, containerCreateResponse.ID, container.RemoveOptions{})
+	
+	if err := dockerClient.ContainerStart(
+		ctx,
+		containerCreateResponse.ID,
+		container.StartOptions{},
+	); err != nil {
+		fmt.Printf("Client::ContainerStart failed with %#v\n", err)
+		return err
+	}
+	
+	logOptions := container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		// like as the -f of `tail -f`
+		Follow: true,
+	}
+	out, err := dockerClient.ContainerLogs(
+		ctx,
+		containerCreateResponse.ID,
+		logOptions,
+	)
+	if err != nil {
+		return err
+	}
+	
+	go func() {
+		defer func(out io.ReadCloser) {
+			err := out.Close()
+			if err != nil {
+				fmt.Printf("close reader of Client::ContainerLogs failed with %#v\n", err)
+			}
+		}(out)
+		
+		_, _ = stdcopy.StdCopy(os.Stdout, os.Stderr, out)
+	}()
+	
+	statusChan, errChan := dockerClient.ContainerWait(
+		ctx,
+		containerCreateResponse.ID,
+		container.WaitConditionNotRunning,
+	)
+	select {
+	case err := <-errChan:
+		return err
+	case status := <-statusChan:
+		if status.StatusCode != 0 {
+			return fmt.Errorf(
+				"the builder container for downloading (cmd: %v) exited with non-zero status: %d. Check logs above",
+				fullCmd,
+				status.StatusCode,
+			)
+		}
+	}
+	
+	fmt.Println("Pre-download completed successfully.")
+	return nil
+}
+
 func getGitAuth(
 	gitSshPrivateKeyFilename string,
 	gitSshUsername string,
