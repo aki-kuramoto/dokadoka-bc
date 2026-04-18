@@ -104,7 +104,8 @@ func EnsureContainerImage(
 ) (string, error) {
 	
 	// imageName := "golang:1.22-alpine"
-	imageName := "golang:1.25.5-alpine3.23"
+	// imageName := "golang:1.25.5-alpine3.23"
+	imageName := "golang:1.25.5"
 	
 	_, _, err := dockerClient.ImageInspectWithRaw(ctx, imageName)
 	if err == nil {
@@ -528,22 +529,39 @@ func DownloadModInContainer(
 		repoPathOnContainer = localRepoPath
 	}
 	
-	hostCfg := &container.HostConfig{
-		Mounts: []mount.Mount{
-			{
-				Type:   mount.TypeBind,
-				Source: repoPathOnContainer,
-				Target: workingDirectoryName,
-			},
+	mounts := []mount.Mount{
+		{
+			Type:   mount.TypeBind,
+			Source: repoPathOnContainer,
+			Target: workingDirectoryName,
 		},
 	}
 	
+	const defaultSshPrivateKeyFilename = "/root/.ssh/id_rsa"
 	if goModCachePathOnContainer != "" {
-		hostCfg.Mounts = append(hostCfg.Mounts, mount.Mount{
+		mounts = append(mounts, mount.Mount{
 			Type:   mount.TypeBind,
 			Source: goModCachePathOnContainer,
 			Target: goPkgMod,
 		})
+	}
+	if strings.TrimSpace(ddbcCfg.GitSshPrivateKeyFilename) != "" {
+		actualSshPrivateKeyFilenameOnContainer, err := convertPrivateKeyPathForContainerIfRequired(
+			ddbcCfg.GitSshPrivateKeyFilename,
+			dockerSshAddr,
+		)
+		if err == nil {
+			containerCfg.Env = append(containerCfg.Env, fmt.Sprintf("GIT_SSH_COMMAND=ssh -o StrictHostKeyChecking=no -i %s", defaultSshPrivateKeyFilename))
+			mounts = append(mounts, mount.Mount{
+				Type:   mount.TypeBind,
+				Source: actualSshPrivateKeyFilenameOnContainer,
+				Target: defaultSshPrivateKeyFilename,
+			})
+		}
+	}
+	
+	hostCfg := &container.HostConfig{
+		Mounts: mounts,
 	}
 	
 	containerCreateResponse, err := dockerClient.ContainerCreate(
@@ -557,6 +575,7 @@ func DownloadModInContainer(
 	if err != nil {
 		// error during connect:
 		// This may happen when the Docker service is down
+		fmt.Printf("%+v\n", hostCfg.Mounts)
 		fmt.Printf("Client::ContainerCreate failed with %#v\n", err)
 		return err
 	}
@@ -808,6 +827,16 @@ func convertCachePathForContainerIfRequired(
 	return convertPathForContainerIfRequired(hostCachePath, dockerSshAddr)
 }
 
+func convertPrivateKeyPathForContainerIfRequired(
+	privateKeyPath string,
+	dockerSshAddr string,
+) (string, error) {
+	homeExpanded := expandHomeAlways(privateKeyPath)
+	return convertPathForContainerIfRequired(homeExpanded, dockerSshAddr)
+}
+
+//
+
 func convertPathForContainerIfRequired(
 	hostPath string,
 	dockerSshAddr string,
@@ -854,6 +883,10 @@ func expandHomeIfRequired(path string) string {
 		return path
 	}
 	
+	return expandHomeAlways(path)
+}
+
+func expandHomeAlways(path string) string {
 	if !strings.HasPrefix(path, "~") {
 		return path
 	}
