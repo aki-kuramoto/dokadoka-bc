@@ -62,6 +62,15 @@ func EnsureLocalRepo(
 	pathToDelete string,
 	err error,
 ) {
+	if stat, err := os.Stat(sourceRepoUrl); err == nil && stat.IsDir() {
+		absPath, err := filepath.Abs(sourceRepoUrl)
+		if err != nil {
+			absPath = sourceRepoUrl
+		}
+		fmt.Printf("Using existing local directory: %s\n", absPath)
+		return nil, absPath, "", nil
+	}
+	
 	localRepoRoot = strings.TrimSpace(localRepoRoot)
 	if localRepoRoot == "" {
 		// use a temporary directory
