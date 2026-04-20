@@ -988,8 +988,50 @@ func countNeedle(
 	counter := 0
 	for _, b := range asByteSlice {
 		if b == needleByte {
-			counter += 1
+			counter++
 		}
 	}
 	return counter
+}
+
+func MaybeWrapInArchive(
+	binaryPath string,
+	binaryName string,
+	resources []ddbccfg.ExtraFileSpec,
+	format string,
+) (archivePath string, isArchive bool, cleanup func(), err error) {
+	if len(resources) == 0 {
+		// no-op
+		return binaryPath, false, func() {}, nil
+	}
+
+	ext := ".tar.gz"
+	if format == "zip" {
+		ext = ".zip"
+	}
+
+	archivePath = filepath.Join(filepath.Dir(binaryPath), binaryName+ext)
+	entries := []ArchiveEntry{
+		{
+			SrcPath:  binaryPath,
+			DestName: binaryName, // Place the binary at the archive root
+		},
+	}
+	for _, res := range resources {
+		entries = append(entries, ArchiveEntry{
+			SrcPath:  res.SrcPath,
+			DestName: res.DestName,
+		})
+	}
+
+	err = MakeArchive(archivePath, format, entries)
+	if err != nil {
+		return "", false, nil, fmt.Errorf("failed to make archive: %w", err)
+	}
+
+	cleanup = func() {
+		os.Remove(archivePath)
+	}
+
+	return archivePath, true, cleanup, nil
 }

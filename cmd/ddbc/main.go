@@ -147,16 +147,31 @@ func processTarget(
 		return fmt.Errorf("Build failed for %s: %v", binaryName, err)
 	}
 	
+	var allResources []ddbccfg.ExtraFileSpec
+	allResources = append(allResources, ddbcCfg.ExtraFiles...)
+	allResources = append(allResources, targetSpec.Resources...)
+
+	archivePath, isArchive, cleanup, err := ddbcmain.MaybeWrapInArchive(outputPath, binaryName, allResources, ddbcCfg.ArchiveFormat)
+	if err != nil {
+		return fmt.Errorf("archive creation failed for %s: %w", binaryName, err)
+	}
+	defer cleanup()
+
+	uploadName := binaryName
+	if isArchive {
+		uploadName = filepath.Base(archivePath)
+	}
+
 	if ddbcCfg.HasAnyStoreSpec() {
-		fmt.Printf("Uploading %s to S3...\n", binaryName)
+		fmt.Printf("Uploading %s to S3...\n", uploadName)
 		
 		if err := ddbcmain.UploadToS3(
 			ctx,
-			outputPath,
-			binaryName,
+			archivePath,
+			uploadName,
 			ddbcCfg,
 		); err != nil {
-			log.Printf("Upload failed for %s: %v", binaryName, err)
+			log.Printf("Upload failed for %s: %v", uploadName, err)
 		}
 	}
 	
@@ -166,15 +181,15 @@ func processTarget(
 			return fmt.Errorf("Failed to create local dest: %v", err)
 		}
 		
-		destPath := filepath.Join(localDestDir, binaryName)
-		if err := copyFile(outputPath, destPath); err != nil {
+		destPath := filepath.Join(localDestDir, uploadName)
+		if err := copyFile(archivePath, destPath); err != nil {
 			log.Printf("Failed to copy binary to local: %v", err)
 		} else {
-			if runtime.GOOS == "darwin" {
+			if runtime.GOOS == "darwin" && !isArchive {
 				// only macOS due to the filesystem of Windows has no permissions
 				os.Chmod(destPath, 0755)
 			}
-			fmt.Printf("Binary saved to: %s\n", destPath)
+			fmt.Printf("Artifact saved to: %s\n", destPath)
 		}
 	}
 	

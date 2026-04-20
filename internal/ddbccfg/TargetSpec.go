@@ -5,8 +5,9 @@ import "strings"
 type TargetSpec struct {
 	Filename string
 	Os       string
-	Arch     string
-	Params   []string
+	Arch      string
+	Params    []string
+	Resources []ExtraFileSpec
 }
 
 func (targetSpec *TargetSpec) GetArtifactName() string {

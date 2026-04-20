@@ -35,6 +35,8 @@ type DdbcConfig struct {
 	GitSshPrivateKeyPassphrase    string
 	ToolchainAndVer               string
 	Gomodcache                    string
+	ArchiveFormat                 string
+	ExtraFiles                    []ExtraFileSpec
 	// TODO: ビルドオプションにお節介をしないフラグを追加する.
 	Targets []*TargetSpec
 }
@@ -62,6 +64,8 @@ func newDdbcConfig(
 	gitSshPrivateKeyPassphrase string,
 	toolchainAndVer string,
 	gomodcache string,
+	archiveFormat string,
+	extraFiles []ExtraFileSpec,
 	targets []*TargetSpec,
 ) *DdbcConfig {
 	return &DdbcConfig{
@@ -87,6 +91,8 @@ func newDdbcConfig(
 		GitSshPrivateKeyPassphrase:    gitSshPrivateKeyPassphrase,
 		ToolchainAndVer:               toolchainAndVer,
 		Gomodcache:                    gomodcache,
+		ArchiveFormat:                 archiveFormat,
+		ExtraFiles:                    extraFiles,
 		Targets:                       targets,
 	}
 }
@@ -135,6 +141,8 @@ func ParseDdbcArgs(args []string) (*DdbcConfig, error) {
 		gitSshPrivateKeyPassphrase    string
 		toolchainAndVer               string
 		gomodcache                    string
+		archiveFormat                 string
+		extraFiles                    []string
 	}
 	
 	// throughout flags only
@@ -160,6 +168,8 @@ func ParseDdbcArgs(args []string) (*DdbcConfig, error) {
 	flagSet.StringVar(&toOpts.gitSshPrivateKeyPassphrase, "git-ssh-private-key-passphrase", envOrDefault("DDBC_GIT_SSH_PRIVATE_KEY_PASSPHRASE", ""), "git ssh private key passphrase")
 	flagSet.StringVar(&toOpts.toolchainAndVer, "toolchain-and-ver", envOrDefault("DDBC_TOOLCHAIN_AND_VER", "golang:1.25.5"), "toolchain image and version")
 	flagSet.StringVar(&toOpts.gomodcache, "gomodcache", envOrDefault("DDBC_GOMODCACHE", ""), "be used as the Go module cache instead of $GOPATH/pkg/mod")
+	flagSet.StringVar(&toOpts.archiveFormat, "archive-format", envOrDefault("DDBC_ARCHIVE_FORMAT", "tar.gz"), "archive format (tar.gz or zip)")
+	flagSet.StringArrayVar(&toOpts.extraFiles, "extra-file", nil, "extra file/dir to include in archive (format: src[:dest])")
 	
 	restOpts, err := parseKnownOnly(flagSet, args)
 	if err != nil {
@@ -170,6 +180,15 @@ func ParseDdbcArgs(args []string) (*DdbcConfig, error) {
 	targets, err := parseTargets(restOpts)
 	if err != nil {
 		return nil, err
+	}
+
+	var parsedExtraFiles []ExtraFileSpec
+	for _, raw := range toOpts.extraFiles {
+		spec, err := ParseExtraFileSpec(raw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid --extra-file spec %q: %w", raw, err)
+		}
+		parsedExtraFiles = append(parsedExtraFiles, spec)
 	}
 	
 	ddbcCfg := newDdbcConfig(
@@ -195,6 +214,8 @@ func ParseDdbcArgs(args []string) (*DdbcConfig, error) {
 		toOpts.gitSshPrivateKeyPassphrase,
 		toOpts.toolchainAndVer,
 		toOpts.gomodcache,
+		toOpts.archiveFormat,
+		parsedExtraFiles,
 		targets,
 	)
 	
@@ -266,9 +287,11 @@ func parseTargets(args []string) ([]*TargetSpec, error) {
 		var tgtOs string
 		var tgtArch string
 		var tgtParams []string
+		var tgtResources []string
 		tgtFlagSet.StringVarP(&tgtOs, "os", "s", "", "target os")
 		tgtFlagSet.StringVarP(&tgtArch, "arch", "a", "", "target architecture")
 		tgtFlagSet.StringArrayVarP(&tgtParams, "param", "p", nil, "additional parameters to pass to the build command")
+		tgtFlagSet.StringArrayVar(&tgtResources, "res", nil, "target-specific extra file/dir to include in archive (format: src[:dest])")
 		
 		if err := tgtFlagSet.Parse(tgtArgs); err != nil {
 			return nil, err
@@ -277,12 +300,22 @@ func parseTargets(args []string) ([]*TargetSpec, error) {
 		if len(tgtFlagSet.Args()) != 0 {
 			return nil, fmt.Errorf("unknown target args: %v", tgtFlagSet.Args())
 		}
+
+		var parsedTargetResources []ExtraFileSpec
+		for _, raw := range tgtResources {
+			spec, err := ParseExtraFileSpec(raw)
+			if err != nil {
+				return nil, fmt.Errorf("invalid --res spec %q for target %s: %w", raw, filename, err)
+			}
+			parsedTargetResources = append(parsedTargetResources, spec)
+		}
 		
 		targetSpecList = append(targetSpecList, &TargetSpec{
-			Filename: filename,
-			Os:       tgtOs,
-			Arch:     tgtArch,
-			Params:   tgtParams,
+			Filename:  filename,
+			Os:        tgtOs,
+			Arch:      tgtArch,
+			Params:    tgtParams,
+			Resources: parsedTargetResources,
 		})
 	}
 	

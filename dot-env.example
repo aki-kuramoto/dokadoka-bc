@@ -32,5 +32,12 @@
 # $ ddbc -t chi-windows-x64 -s windows -a amd64 -p ./cmd/chi -t chi-linux-amd64 -s linux -a amd64 -p ./cmd/chi -t chi-macos-arm64 -s darwin -a arm64 -p ./cmd/chi
 # ```
 
-
-
+# extra files / resources
+# You can include extra files/directories to the output archive.
+# By default, files are packaged as .tar.gz (can be switched with --archive-format zip)
+#
+# Global (throughput) extra file:
+# $ ddbc --extra-file ./shared-config.yaml ...
+#
+# Target-specific extra resource:
+# $ ddbc -t myapp-linux -s linux -a amd64 -p ./cmd/myapp --res ./linux-resource ...
