@@ -1,0 +1,13 @@
+{
+  "DocumentName": "AWS-RunShellScript",
+  "Targets": [{"Key": "InstanceIds", "Values": ["i-0212d3726438e6d20", "i-0d10947dafbee04ef"]}],
+  "Parameters": {
+    "commands": [
+      "set -e",
+      "aws s3 cp s3://jishonary-artifacts/batch-reviewer/rel-2026-05-12.0/kohdan-batch-reviewer-linux-arm64 /opt/croff/kohdan-batch-reviewer --region ap-northeast-1",
+      "chmod +x /opt/croff/kohdan-batch-reviewer",
+      "file /opt/croff/kohdan-batch-reviewer",
+      "echo 'batch-reviewer deploy (arm64) done'"
+    ]
+  }
+}

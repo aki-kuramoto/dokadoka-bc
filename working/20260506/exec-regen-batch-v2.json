@@ -1,0 +1,16 @@
+{
+  "DocumentName": "AWS-RunShellScript",
+  "Targets": [{"Key": "InstanceIds", "Values": ["i-0212d3726438e6d20"]}],
+  "Parameters": {
+    "commands": [
+      "set -ex",
+      "cd /opt/kohdan",
+      "set -a && source /etc/kohdan/kohdan.env && set +a",
+      "export STORAGE_ENDPOINT=",
+      "export STORAGE_ACCESS_KEY=",
+      "export STORAGE_SECRET_KEY=",
+      "./html-regen-batch --concurrency=8 --page-size=500"
+    ],
+    "executionTimeout": ["3600"]
+  }
+}

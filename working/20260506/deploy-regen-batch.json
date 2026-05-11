@@ -1,0 +1,13 @@
+{
+  "DocumentName": "AWS-RunShellScript",
+  "Targets": [{"Key": "InstanceIds", "Values": ["i-0212d3726438e6d20"]}],
+  "Parameters": {
+    "commands": [
+      "set -ex",
+      "aws s3 cp s3://jishonary-artifacts/kohdan/rel-2026-05-06.1/html-regen-batch-linux-arm64 /opt/kohdan/html-regen-batch --region ap-northeast-1",
+      "chmod +x /opt/kohdan/html-regen-batch",
+      "file /opt/kohdan/html-regen-batch",
+      "echo 'html-regen-batch deployed'"
+    ]
+  }
+}
